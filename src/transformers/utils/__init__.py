@@ -214,6 +214,8 @@ from .import_utils import (
     is_torchvision_available,
     is_training_run_on_sagemaker,
     is_vision_available,
+    is_torchvision_available,
+    is_coremltools_available,
     requires_backends,
     torch_only_method,
 )
@@ -241,6 +243,7 @@ IMAGE_PROCESSOR_NAME = FEATURE_EXTRACTOR_NAME
 PROCESSOR_NAME = "processor_config.json"
 GENERATION_CONFIG_NAME = "generation_config.json"
 MODEL_CARD_NAME = "modelcard.json"
+COREML_COMPILED_WEIGHTS_NAME = "coreml_model.mlmodelc"
 
 SENTENCEPIECE_UNDERLINE = "▁"
 SPIECE_UNDERLINE = SENTENCEPIECE_UNDERLINE  # Kept for backward compatibility

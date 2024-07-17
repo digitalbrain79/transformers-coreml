@@ -70,6 +70,7 @@ from .utils import (
     TF_WEIGHTS_NAME,
     WEIGHTS_INDEX_NAME,
     WEIGHTS_NAME,
+    COREML_COMPILED_WEIGHTS_NAME,
     ContextManagers,
     ModelOutput,
     PushToHubMixin,
@@ -88,6 +89,7 @@ from .utils import (
     is_safetensors_available,
     is_torch_sdpa_available,
     is_torch_xla_available,
+    is_coremltools_available,
     logging,
     replace_return_docstrings,
     strtobool,
@@ -100,6 +102,7 @@ from .utils.import_utils import (
     is_torchdynamo_compiling,
 )
 from .utils.quantization_config import BitsAndBytesConfig, QuantizationMethod
+import coremltools as ct
 
 
 XLA_USE_BF16 = os.environ.get("XLA_USE_BF16", "0").upper()
@@ -523,6 +526,10 @@ def load_state_dict(checkpoint_file: Union[str, os.PathLike], is_quantized: bool
                 "you save your model with the `save_pretrained` method."
             )
         return safe_load_file(checkpoint_file)
+
+    if checkpoint_file.endswith(".mlmodelc"):
+        return ct.models.CompiledMLModel(checkpoint_file, ct.ComputeUnit.CPU_AND_GPU)
+
     try:
         if (
             (is_deepspeed_zero3_enabled() and torch.distributed.is_initialized() and torch.distributed.get_rank() > 0)
@@ -577,7 +584,7 @@ def set_initialized_submodules(model, state_dict_keys):
     not_initialized_submodules = {}
     for module_name, module in model.named_modules():
         loaded_keys = {k.replace(f"{module_name}.", "") for k in state_dict_keys if k.startswith(f"{module_name}.")}
-        if loaded_keys.issuperset(module.state_dict()):
+        if len(loaded_keys) > 0 and loaded_keys.issuperset(module.state_dict()):
             module._is_hf_initialized = True
         else:
             not_initialized_submodules[module_name] = module
@@ -658,6 +665,12 @@ def _find_identical(tensors: List[Set[str]], state_dict: Dict[str, torch.Tensor]
 
 
 def _load_state_dict_into_model(model_to_load, state_dict, start_prefix):
+    if is_coremltools_available():
+        model_to_load._state_dict = state_dict
+        if isinstance(state_dict, ct.models.CompiledMLModel):
+            model_to_load._coreml_type = "compiled"
+        return ""
+
     # Convert old format to new format if needed from a PyTorch state_dict
     old_keys = []
     new_keys = []
@@ -804,6 +817,9 @@ def _load_state_dict_into_meta_model(
     #   they won't get loaded.
 
     error_msgs = []
+
+    if isinstance(state_dict, ct.models.CompiledMLModel):
+        return error_msgs, offload_index, state_dict_index
 
     old_keys = []
     new_keys = []
@@ -1271,6 +1287,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
     _no_split_modules = None
     _skip_keys_device_placement = None
     _keep_in_fp32_modules = None
+    if is_coremltools_available():
+        _state_dict = None
+        _coreml_type = None
 
     # a list of `re` patterns of `state_dict` keys that should be removed from the list of missing
     # keys we find (keys inside the model but not in the checkpoint) and avoid unnecessary warnings.
@@ -1301,6 +1320,12 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
 
     # Has support for a `QuantoQuantizedCache` instance as `past_key_values`
     _supports_quantized_cache = False
+
+    def state_dict(self):
+        if is_coremltools_available():
+            return self._state_dict
+        else:
+            return super().state_dict()
 
     @property
     def dummy_inputs(self) -> Dict[str, torch.Tensor]:
@@ -3359,6 +3384,13 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
                     archive_file = os.path.join(
                         pretrained_model_name_or_path, subfolder, _add_variant(WEIGHTS_NAME, variant)
                     )
+                elif os.path.isdir(
+                        os.path.join(pretrained_model_name_or_path, subfolder, COREML_COMPILED_WEIGHTS_NAME)
+                ):
+                    # Load from a CoreML checkpoint
+                    archive_file = os.path.join(
+                        pretrained_model_name_or_path, subfolder, COREML_COMPILED_WEIGHTS_NAME
+                    )
                 elif os.path.isfile(
                     os.path.join(pretrained_model_name_or_path, subfolder, _add_variant(WEIGHTS_INDEX_NAME, variant))
                 ):
@@ -3688,7 +3720,9 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
             if is_sharded:
                 loaded_state_dict_keys = sharded_metadata["all_checkpoint_keys"]
             else:
-                loaded_state_dict_keys = list(state_dict.keys())
+                loaded_state_dict_keys = []
+                if not resolved_archive_file.endswith(COREML_COMPILED_WEIGHTS_NAME):
+                    loaded_state_dict_keys = list(state_dict.keys())
 
             if gguf_path is None and (low_cpu_mem_usage or (use_keep_in_fp32_modules and is_accelerate_available())):
                 # In case some weights need to be kept in float32 and accelerate is not installed,
@@ -3984,6 +4018,8 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
 
         # Retrieve missing & unexpected_keys
         model_state_dict = model.state_dict()
+        if is_coremltools_available():
+            model_state_dict = {}
         expected_keys = list(model_state_dict.keys())
         prefix = model.base_model_prefix
 
@@ -4028,7 +4064,7 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
         unexpected_keys = sorted(unexpected_keys - model_buffers)
 
         model.tie_weights()
-        if device_map is None and not is_fsdp_enabled() and not is_deepspeed_zero3_enabled():
+        if device_map is None and not is_fsdp_enabled() and not is_deepspeed_zero3_enabled() and not is_coremltools_available():
             ptrs = collections.defaultdict(list)
             for name, tensor in model.state_dict().items():
                 id_tensor = id_tensor_storage(tensor)

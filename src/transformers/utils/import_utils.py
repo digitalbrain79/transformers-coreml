@@ -1085,6 +1085,10 @@ def is_jieba_available():
     return _jieba_available
 
 
+def is_coremltools_available():
+    return importlib.util.find_spec("coremltools") is not None
+
+
 def is_jinja_available():
     return _jinja_available
 

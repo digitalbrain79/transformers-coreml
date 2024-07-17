@@ -21,6 +21,7 @@ import torch
 import torch.utils.checkpoint
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+import numpy as np
 
 from ...activations import ACT2FN
 from ...modeling_attn_mask_utils import _create_4d_causal_attention_mask, _prepare_4d_attention_mask
@@ -442,10 +443,11 @@ class CLIPPreTrainedModel(PreTrainedModel):
                 std=self.config.hidden_size**-0.5 * self.config.initializer_factor,
             )
         elif isinstance(module, CLIPTextModelWithProjection):
-            nn.init.normal_(
-                module.text_projection.weight,
-                std=self.config.hidden_size**-0.5 * self.config.initializer_factor,
-            )
+            if hasattr(module, "text_projection"):
+                nn.init.normal_(
+                    module.text_projection.weight,
+                    std=self.config.hidden_size**-0.5 * self.config.initializer_factor,
+                )
         elif isinstance(module, CLIPForImageClassification):
             nn.init.normal_(
                 module.classifier.weight,
@@ -763,9 +765,10 @@ class CLIPTextModel(CLIPPreTrainedModel):
 
     def __init__(self, config: CLIPTextConfig):
         super().__init__(config)
-        self.text_model = CLIPTextTransformer(config)
-        # Initialize weights and apply final processing
-        self.post_init()
+        if not hasattr(self, "_coreml_type"):
+            self.text_model = CLIPTextTransformer(config)
+            # Initialize weights and apply final processing
+            self.post_init()
 
     def get_input_embeddings(self) -> nn.Module:
         return self.text_model.embeddings.token_embedding
@@ -803,6 +806,20 @@ class CLIPTextModel(CLIPPreTrainedModel):
         ```"""
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        if hasattr(self, "_coreml_type"):
+            if self._coreml_type == "compiled":
+                kwargs = {"input_ids": input_ids.numpy().astype(np.float32)}
+
+                hidden_embeds = torch.FloatTensor(self._state_dict.predict(kwargs)["hidden_embeds"])
+                pooled_outputs = torch.FloatTensor(self._state_dict.predict(kwargs)["pooled_outputs"])
+                if not return_dict:
+                    return (hidden_embeds, pooled_outputs)
+
+                return BaseModelOutputWithPooling(
+                    hidden_states=(hidden_embeds,),
+                    pooler_output=pooled_outputs
+                )
+
         return self.text_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -811,7 +828,6 @@ class CLIPTextModel(CLIPPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-
 
 class CLIPVisionTransformer(nn.Module):
     def __init__(self, config: CLIPVisionConfig):
@@ -1172,13 +1188,13 @@ class CLIPTextModelWithProjection(CLIPPreTrainedModel):
 
     def __init__(self, config: CLIPTextConfig):
         super().__init__(config)
+        if not hasattr(self, "_coreml_type"):
+            self.text_model = CLIPTextTransformer(config)
 
-        self.text_model = CLIPTextTransformer(config)
+            self.text_projection = nn.Linear(config.hidden_size, config.projection_dim, bias=False)
 
-        self.text_projection = nn.Linear(config.hidden_size, config.projection_dim, bias=False)
-
-        # Initialize weights and apply final processing
-        self.post_init()
+            # Initialize weights and apply final processing
+            self.post_init()
 
     def get_input_embeddings(self) -> nn.Module:
         return self.text_model.embeddings.token_embedding
@@ -1214,6 +1230,20 @@ class CLIPTextModelWithProjection(CLIPPreTrainedModel):
         >>> text_embeds = outputs.text_embeds
         ```"""
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if hasattr(self, "_coreml_type"):
+            if self._coreml_type == "compiled":
+                kwargs = {"input_ids": input_ids.numpy().astype(np.float32)}
+
+                hidden_embeds = torch.FloatTensor(self._state_dict.predict(kwargs)["hidden_embeds"])
+                pooled_outputs = torch.FloatTensor(self._state_dict.predict(kwargs)["pooled_outputs"])
+                if not return_dict:
+                    return (hidden_embeds, pooled_outputs)
+
+                return CLIPTextModelOutput(
+                    hidden_states=(hidden_embeds,),
+                    text_embeds=pooled_outputs
+                )
 
         text_outputs = self.text_model(
             input_ids=input_ids,
