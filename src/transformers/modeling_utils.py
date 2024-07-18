@@ -71,6 +71,7 @@ from .utils import (
     WEIGHTS_INDEX_NAME,
     WEIGHTS_NAME,
     COREML_COMPILED_WEIGHTS_NAME,
+    COREML_PACKAGES_WEIGHTS_NAME,
     ContextManagers,
     ModelOutput,
     PushToHubMixin,
@@ -529,6 +530,9 @@ def load_state_dict(checkpoint_file: Union[str, os.PathLike], is_quantized: bool
 
     if checkpoint_file.endswith(".mlmodelc"):
         return ct.models.CompiledMLModel(checkpoint_file, ct.ComputeUnit.CPU_AND_GPU)
+
+    if checkpoint_file.endswith(".mlpackage"):
+        return ct.models.MLModel(checkpoint_file, compute_units=ct.ComputeUnit.CPU_AND_GPU)
 
     try:
         if (
@@ -3391,6 +3395,13 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
                     archive_file = os.path.join(
                         pretrained_model_name_or_path, subfolder, COREML_COMPILED_WEIGHTS_NAME
                     )
+                elif os.path.isdir(
+                        os.path.join(pretrained_model_name_or_path, subfolder, COREML_PACKAGES_WEIGHTS_NAME)
+                ):
+                    # Load from a CoreML checkpoint
+                    archive_file = os.path.join(
+                        pretrained_model_name_or_path, subfolder, COREML_PACKAGES_WEIGHTS_NAME
+                    )
                 elif os.path.isfile(
                     os.path.join(pretrained_model_name_or_path, subfolder, _add_variant(WEIGHTS_INDEX_NAME, variant))
                 ):
@@ -3721,7 +3732,8 @@ class PreTrainedModel(nn.Module, ModuleUtilsMixin, GenerationMixin, PushToHubMix
                 loaded_state_dict_keys = sharded_metadata["all_checkpoint_keys"]
             else:
                 loaded_state_dict_keys = []
-                if not resolved_archive_file.endswith(COREML_COMPILED_WEIGHTS_NAME):
+                if not (resolved_archive_file.endswith(COREML_COMPILED_WEIGHTS_NAME) or
+                        resolved_archive_file.endswith(COREML_PACKAGES_WEIGHTS_NAME)):
                     loaded_state_dict_keys = list(state_dict.keys())
 
             if gguf_path is None and (low_cpu_mem_usage or (use_keep_in_fp32_modules and is_accelerate_available())):

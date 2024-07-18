@@ -807,18 +807,17 @@ class CLIPTextModel(CLIPPreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if hasattr(self, "_coreml_type"):
-            if self._coreml_type == "compiled":
-                kwargs = {"input_ids": input_ids.numpy().astype(np.float32)}
+            kwargs = {"input_ids": input_ids.numpy().astype(np.float32)}
 
-                hidden_embeds = torch.FloatTensor(self._state_dict.predict(kwargs)["hidden_embeds"])
-                pooled_outputs = torch.FloatTensor(self._state_dict.predict(kwargs)["pooled_outputs"])
-                if not return_dict:
-                    return (hidden_embeds, pooled_outputs)
+            hidden_embeds = torch.FloatTensor(self._state_dict.predict(kwargs)["hidden_embeds"])
+            pooled_outputs = torch.FloatTensor(self._state_dict.predict(kwargs)["pooled_outputs"])
+            if not return_dict:
+                return (hidden_embeds, pooled_outputs)
 
-                return BaseModelOutputWithPooling(
-                    hidden_states=(hidden_embeds,),
-                    pooler_output=pooled_outputs
-                )
+            return BaseModelOutputWithPooling(
+                hidden_states=(hidden_embeds,),
+                pooler_output=pooled_outputs
+            )
 
         return self.text_model(
             input_ids=input_ids,
@@ -1232,18 +1231,17 @@ class CLIPTextModelWithProjection(CLIPPreTrainedModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if hasattr(self, "_coreml_type"):
-            if self._coreml_type == "compiled":
-                kwargs = {"input_ids": input_ids.numpy().astype(np.float32)}
+            kwargs = {"input_ids": input_ids.numpy().astype(np.float32)}
 
-                hidden_embeds = torch.FloatTensor(self._state_dict.predict(kwargs)["hidden_embeds"])
-                pooled_outputs = torch.FloatTensor(self._state_dict.predict(kwargs)["pooled_outputs"])
-                if not return_dict:
-                    return (hidden_embeds, pooled_outputs)
+            hidden_embeds = torch.FloatTensor(self._state_dict.predict(kwargs)["hidden_embeds"])
+            pooled_outputs = torch.FloatTensor(self._state_dict.predict(kwargs)["pooled_outputs"])
+            if not return_dict:
+                return (hidden_embeds, pooled_outputs)
 
-                return CLIPTextModelOutput(
-                    hidden_states=(hidden_embeds,),
-                    text_embeds=pooled_outputs
-                )
+            return CLIPTextModelOutput(
+                hidden_states=(hidden_embeds,),
+                text_embeds=pooled_outputs
+            )
 
         text_outputs = self.text_model(
             input_ids=input_ids,

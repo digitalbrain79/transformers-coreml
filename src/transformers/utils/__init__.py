@@ -244,6 +244,7 @@ PROCESSOR_NAME = "processor_config.json"
 GENERATION_CONFIG_NAME = "generation_config.json"
 MODEL_CARD_NAME = "modelcard.json"
 COREML_COMPILED_WEIGHTS_NAME = "coreml_model.mlmodelc"
+COREML_PACKAGES_WEIGHTS_NAME = "coreml_model.mlpackage"
 
 SENTENCEPIECE_UNDERLINE = "▁"
 SPIECE_UNDERLINE = SENTENCEPIECE_UNDERLINE  # Kept for backward compatibility
