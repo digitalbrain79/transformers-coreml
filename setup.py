@@ -189,6 +189,7 @@ _deps = [
     "urllib3<2.0.0",
     "uvicorn",
     "pytest-rich",
+    "coremltools>=7.2"
 ]
 
 
